@@ -101,64 +101,6 @@ function New-WordPairs ($scoredWords) {
 
 
 
-
-function xxNew-WordPairs ($scoredWords) {
-    # the best pair are two words with the highest combined score
-    $wordPairs = @{}
-    
-    $shortScoredWords = $scoredWords
-
-    foreach ($firstWord in $scoredWords) {
-        Write-Host -NoNewline "."
-        # make a shrinking list of words to pair against
-        $shortScoredWords = $shortScoredWords | Where-Object { $_.Name -ne $firstWord.Name }
-
-        # ignore any with duplicate letters with our word
-        $extraShortScoredWords = $shortScoredWords | Where-Object {
-            ($_.Name.ToCharArray() -notcontains ($firstWord.Name.ToCharArray())[0]) -and 
-            ($_.Name.ToCharArray() -notcontains ($firstWord.Name.ToCharArray())[1]) -and
-            ($_.Name.ToCharArray() -notcontains ($firstWord.Name.ToCharArray())[2]) -and
-            ($_.Name.ToCharArray() -notcontains ($firstWord.Name.ToCharArray())[3]) -and
-            ($_.Name.ToCharArray() -notcontains ($firstWord.Name.ToCharArray())[4])
-        }
-
-        $wordPairs = $extraShortScoredWords | ForEach-Object -ThrottleLimit 128 -Parallel {
-            $secondWord = $_
-            # skip the same word
-            # if ($firstWord.Name -eq $secondWord.Name) { Write-Host "same word"; continue }
-
-            # double letters?
-            if ((Compare-Object ($Using:firstWord).Name.ToCharArray() $secondWord.Name.ToCharArray() -IncludeEqual).SideIndicator -contains "==") { 
-                continue 
-            }
-
-            $wordPair = [PSCustomObject]@{
-                Words = @($Using:firstWord, $secondWord)
-                Score = $Using:firstWord.Score + $secondWord.Score
-            }
-
-            <#
-            if ($wordPairs.Length) {
-                # are there pairs against which to check for dupes?
-                # do we already have a permutation of this word pair?
-                if (Test-IsDuplicatePair -wordPair $wordPair -wordPairs $wordPairs) { Write-Host "dupe"; continue }
-            }#>
-            
-            # output the new pair
-            $wordPair 
-        }
-
-        # reduce the size of the wordPairs array.. too much garbage.  Keep the top 10,000 scores.
-        $wordPairs = $wordPairs | Sort-Object -Property Score | Select-Object -Last 1000
-
-    }
-
-    Write-Host "!"
-    return $wordPairs
-}
-
-
-
 Write-Output "Initializing Letters.."
 $letters = Initialize-Letters
 Write-Output "Initialized $($letters.count) Letters"
