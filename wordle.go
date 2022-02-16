@@ -340,45 +340,45 @@ func main() {
 		fmt.Printf("%s %d\n", kv.Key, kv.Value)
 	}
 	fmt.Println("------")
+	/*
+		/////////////// top X scored trips
+		topX = 1000
 
-	/////////////// top X scored trips
-	topX = 1000
+		fmt.Printf("--- top %d scored trips ---\n", topX)
+		// score the trips
+		scoredTrips := scoreTrips(scoredWords)
+		// sort the scored pairs
+		sortedScoredTrips := sortScoredThings(scoredTrips)
 
-	fmt.Printf("--- top %d scored trips ---\n", topX)
-	// score the trips
-	scoredTrips := scoreTrips(scoredWords)
-	// sort the scored pairs
-	sortedScoredTrips := sortScoredThings(scoredTrips)
+		// need to be within slice bounds
+		currentLength = len(sortedScoredTrips)
+		if topX > currentLength {
+			topX = currentLength
+		}
 
-	// need to be within slice bounds
-	currentLength = len(sortedScoredTrips)
-	if topX > currentLength {
-		topX = currentLength
-	}
+		for _, kv := range sortedScoredTrips[0:topX] {
+			fmt.Printf("%s %d\n", kv.Key, kv.Value)
+		}
+		fmt.Println("------")
 
-	for _, kv := range sortedScoredTrips[0:topX] {
-		fmt.Printf("%s %d\n", kv.Key, kv.Value)
-	}
-	fmt.Println("------")
+		/////////////// top X scored quads
+		topX = 1000
 
-	/////////////// top X scored quads
-	topX = 1000
+		fmt.Printf("--- top %d scored quads ---\n", topX)
+		// score the trips
+		scoredQuads := scoreQuads(scoredWords)
+		// sort the scored pairs
+		sortedScoredQuads := sortScoredThings(scoredQuads)
 
-	fmt.Printf("--- top %d scored quads ---\n", topX)
-	// score the trips
-	scoredQuads := scoreQuads(scoredWords)
-	// sort the scored pairs
-	sortedScoredQuads := sortScoredThings(scoredQuads)
+		// need to be within slice bounds
+		currentLength = len(sortedScoredQuads)
+		if topX > currentLength {
+			topX = currentLength
+		}
 
-	// need to be within slice bounds
-	currentLength = len(sortedScoredQuads)
-	if topX > currentLength {
-		topX = currentLength
-	}
-
-	for _, kv := range sortedScoredQuads[0:topX] {
-		fmt.Printf("%s %d\n", kv.Key, kv.Value)
-	}
-	fmt.Println("------")
+		for _, kv := range sortedScoredQuads[0:topX] {
+			fmt.Printf("%s %d\n", kv.Key, kv.Value)
+		}
+		fmt.Println("------") */
 
 }
