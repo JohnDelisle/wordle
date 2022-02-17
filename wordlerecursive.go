@@ -2,6 +2,8 @@ package main
 
 // playing a bit with recursion, then will move to concurrency
 
+// NOPE, not working out as planned, nicer looking (?) than loops within loops.. but can't shrink candidate words, run-time is brutal
+
 import (
 	"bufio"
 	"fmt"
@@ -18,19 +20,19 @@ const wantWordsWithDupeLetters bool = true
 const scoreDupeLetters bool = false
 
 // how many starter words are we looking for? (e.g. "4" = "cat,dog,rat,bat" as starters)
-const starterWordCount int = 4
+const starterWordCount int = 3
 
 type kv struct {
 	Key   string
 	Value int
 }
 
-var letters = make(map[rune]int)
-var words = make(map[string]int)
+var letters = make(map[string]int)
+var allWords = make(map[string]int)
 
 func initLetters() {
 	for letter := 'a'; letter <= 'z'; letter++ {
-		letters[letter] = 0
+		letters[string(letter)] = 0
 	}
 }
 
@@ -49,14 +51,14 @@ func initWords(path string) {
 			continue
 		}
 
-		words[scanner.Text()] = 0
+		allWords[scanner.Text()] = 0
 	}
 }
 
 func scoreLetters() {
 	for letter := range letters {
-		for word := range words {
-			if strings.ContainsRune(word, letter) {
+		for word := range allWords {
+			if strings.Contains(word, letter) {
 				letters[letter]++
 			}
 		}
@@ -75,14 +77,14 @@ func scoreWord(word string) int {
 			continue
 		}
 		tested = tested + string(letter)
-		score = score + letters[letter]
+		score = score + letters[string(letter)]
 	}
 	return score
 }
 
 func scoreWords() {
-	for word := range words {
-		words[word] = scoreWord(word)
+	for word := range allWords {
+		allWords[word] = scoreWord(word)
 	}
 }
 
@@ -114,7 +116,7 @@ func hasDupeLetters(word string) bool {
 	return false
 }
 
-func findStarters(startingCombos map[string]int, depth int) map[string]int {
+func findStarters(startingCombos map[string]int, shrinkingWords map[string]int, depth int) map[string]int {
 	if depth <= 0 {
 		fmt.Println("depth 0, returning startingCombos")
 		for startingCombo := range startingCombos {
@@ -129,18 +131,38 @@ func findStarters(startingCombos map[string]int, depth int) map[string]int {
 	// first pass, populate with "words"
 	if len(startingCombos) == 0 {
 		fmt.Println("first pass, populating startingCombos")
-		for word := range words {
+		for word := range shrinkingWords {
 			newStartingCombos[word] = 0
 		}
 	} else {
 		for startingCombo := range startingCombos {
-			for word := range words {
-				newStartingCombos[startingCombo+","+word] = 0
+			for word := range shrinkingWords {
+				newStartingCombo := startingCombo + "," + word
+				if uniqueStartingCombo(newStartingCombo, newStartingCombos) {
+					newStartingCombos[newStartingCombo] = 0
+				}
 			}
 		}
 	}
 
-	return findStarters(newStartingCombos, depth-1)
+	return findStarters(newStartingCombos, shrinkingWords, depth-1)
+}
+
+func uniqueStartingCombo(newStartingCombo string, newStartingCombos map[string]int) bool {
+	var foundComboMatch bool
+	splitWords := strings.Split(newStartingCombo, ",")
+	for startingCombo := range newStartingCombos {
+		foundComboMatch = true // assume match until proven otherwise
+		for i := 0; i < len(splitWords); i++ {
+			if !strings.Contains(startingCombo, splitWords[i]) {
+				foundComboMatch = false
+			}
+		}
+		if foundComboMatch {
+			return false
+		}
+	}
+	return true
 }
 
 func pruneThing(scoredThing map[string]int) map[string]int {
@@ -176,6 +198,16 @@ func removeWord(dirtyWord string, words map[string]int) map[string]int {
 	return cleanWords
 }
 
+func printSortedScoredThing(sortedScoredThing []kv, topX int) {
+	if topX > len(sortedScoredThing) || topX == 0 {
+		topX = len(sortedScoredThing)
+	}
+
+	for _, kv := range sortedScoredThing[:topX] {
+		fmt.Printf("%s %d\n", kv.Key, kv.Value)
+	}
+}
+
 func main() {
 	initLetters()
 	initWords("c:\\temp\\wordlewords.txt.short")
@@ -186,28 +218,24 @@ func main() {
 	// from https://github.com/tabatkins/wordle-list
 
 	// what'd we read?
-	fmt.Printf("Read %d words", len(words))
+	fmt.Printf("Read %d words", len(allWords))
 
 	// score and print letters
 	fmt.Println("--- scored letters ---")
-	for letter, score := range letters {
-		fmt.Println(string(letter), score)
-	}
+	sortedScoredLettes := sortScoredThings(letters)
+	printSortedScoredThing(sortedScoredLettes, 0)
 	fmt.Println("------")
 
 	/////////////// score words
 	scoreWords()
-	fmt.Printf("Scored %d words", len(words))
+	fmt.Printf("Scored %d words", len(allWords))
 
 	////////////// top X scored words
 	topX = 10
 	fmt.Printf("--- top %d scored words ---\n", topX)
 	// sort the scored words
-	sortedScoredWords := sortScoredThings(words)
-
-	for _, kv := range sortedScoredWords[0:topX] {
-		fmt.Printf("%s %d\n", kv.Key, kv.Value)
-	}
+	sortedScoredWords := sortScoredThings(allWords)
+	printSortedScoredThing(sortedScoredWords, topX)
 	fmt.Println("------")
 
 	////////////// starting combos
@@ -215,13 +243,10 @@ func main() {
 	var startingCombos = make(map[string]int)
 	fmt.Printf("--- top %d starting combos, %d deep ---\n", topX, starterWordCount)
 	// build our word combos
-	startingCombos = findStarters(startingCombos, starterWordCount)
+	startingCombos = findStarters(startingCombos, allWords, starterWordCount)
 	// sort the scored words
 	sortedStartingCombos := sortScoredThings(startingCombos)
-
-	for _, kv := range sortedStartingCombos {
-		fmt.Printf("%s %d\n", kv.Key, kv.Value)
-	}
+	printSortedScoredThing(sortedStartingCombos, 0)
 	fmt.Println("------")
 
 }
