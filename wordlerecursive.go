@@ -17,6 +17,9 @@ const wantWordsWithDupeLetters bool = true
 // if a letter appears more than once in a word, should that letter's score be counted once (false), or for every occurence (true)?
 const scoreDupeLetters bool = false
 
+// how many starter words are we looking for? (e.g. "4" = "cat,dog,rat,bat" as starters)
+const starterWordCount int = 4
+
 type kv struct {
 	Key   string
 	Value int
@@ -111,6 +114,35 @@ func hasDupeLetters(word string) bool {
 	return false
 }
 
+func findStarters(startingCombos map[string]int, depth int) map[string]int {
+	if depth <= 0 {
+		fmt.Println("depth 0, returning startingCombos")
+		for startingCombo := range startingCombos {
+			startingCombos[startingCombo] = scoreWord(startingCombo)
+		}
+		return startingCombos
+	}
+
+	// to hold the new longer combos as we iterate recursively
+	var newStartingCombos = make(map[string]int)
+
+	// first pass, populate with "words"
+	if len(startingCombos) == 0 {
+		fmt.Println("first pass, populating startingCombos")
+		for word := range words {
+			newStartingCombos[word] = 0
+		}
+	} else {
+		for startingCombo := range startingCombos {
+			for word := range words {
+				newStartingCombos[startingCombo+","+word] = 0
+			}
+		}
+	}
+
+	return findStarters(newStartingCombos, depth-1)
+}
+
 func pruneThing(scoredThing map[string]int) map[string]int {
 	sortedScoredThing := sortScoredThings(scoredThing)
 
@@ -146,7 +178,7 @@ func removeWord(dirtyWord string, words map[string]int) map[string]int {
 
 func main() {
 	initLetters()
-	initWords("c:\\temp\\wordlewords.txt")
+	initWords("c:\\temp\\wordlewords.txt.short")
 	scoreLetters()
 
 	var topX int
@@ -174,6 +206,20 @@ func main() {
 	sortedScoredWords := sortScoredThings(words)
 
 	for _, kv := range sortedScoredWords[0:topX] {
+		fmt.Printf("%s %d\n", kv.Key, kv.Value)
+	}
+	fmt.Println("------")
+
+	////////////// starting combos
+	topX = 10
+	var startingCombos = make(map[string]int)
+	fmt.Printf("--- top %d starting combos, %d deep ---\n", topX, starterWordCount)
+	// build our word combos
+	startingCombos = findStarters(startingCombos, starterWordCount)
+	// sort the scored words
+	sortedStartingCombos := sortScoredThings(startingCombos)
+
+	for _, kv := range sortedStartingCombos {
 		fmt.Printf("%s %d\n", kv.Key, kv.Value)
 	}
 	fmt.Println("------")
