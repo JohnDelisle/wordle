@@ -1,5 +1,9 @@
 package wordle
 
+// playing a bit with recursion, then will move to concurrency
+
+// NOPE, not working out as planned, nicer looking (?) than loops within loops.. but can't shrink candidate words, run-time is brutal
+
 import (
 	"bufio"
 	"fmt"
@@ -9,71 +13,76 @@ import (
 	"strings"
 )
 
+// load words that have duplicat letters in them (true)?  Or skip them cause they're not great starting words (false)?
+const wantWordsWithDupeLetters bool = true
+
+// if a letter appears more than once in a word, should that letter's score be counted once (false), or for every occurence (true)?
+const scoreDupeLetters bool = false
+
 type kv struct {
 	Key   string
 	Value int
 }
 
-func initLetters() map[rune]int {
-	var letters = make(map[rune]int)
+var letters = make(map[string]int)
+var allWords = make(map[string]int)
+
+func initLetters() {
 	for letter := 'a'; letter <= 'z'; letter++ {
-		letters[letter] = 0
+		letters[string(letter)] = 0
 	}
-	return letters
 }
 
-func initWords(path string) (map[string]int, error) {
-	var words = make(map[string]int)
-
+func initWords(path string) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		log.Fatalf("readLines: %s", err)
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 
-		words[scanner.Text()] = 0
-	}
-	return words, scanner.Err()
-}
-
-func scoreLetters(letters map[rune]int, words map[string]int) map[rune]int {
-
-	for letter := range letters {
-		for word := range words {
-			if strings.ContainsRune(word, letter) {
-				letters[letter]++
-			}
-		}
-	}
-
-	return letters
-}
-
-func scoreWords(letters map[rune]int, words map[string]int) map[string]int {
-	var scoredWords = make(map[string]int)
-
-	for word := range words {
-		if hasDupeLetters(word) {
+		if !wantWordsWithDupeLetters && hasDupeLetters(scanner.Text()) {
 			// skip words that are low-value starting words..
 			continue
 		}
 
-		var tested string
-		for _, letter := range word {
-			// only score each letter once
-			if strings.ContainsRune(tested, letter) {
-				continue
-			}
-			tested = tested + string(letter)
+		allWords[scanner.Text()] = 0
+	}
+}
 
-			scoredWords[word] = scoredWords[word] + letters[letter]
+func scoreLetters() {
+	for letter := range letters {
+		for word := range allWords {
+			if strings.Contains(word, letter) {
+				letters[letter]++
+			}
 		}
 	}
+}
 
-	return scoredWords
+func scoreWord(word string) int {
+	var tested string
+	var score int = 0
+	for _, letter := range word {
+		if string(letter) == "," {
+			continue
+		}
+		// only score each letter once
+		if !scoreDupeLetters && strings.ContainsRune(tested, letter) {
+			continue
+		}
+		tested = tested + string(letter)
+		score = score + letters[string(letter)]
+	}
+	return score
+}
+
+func scoreWords() {
+	for word := range allWords {
+		allWords[word] = scoreWord(word)
+	}
 }
 
 func sortScoredThings(scoredThings map[string]int) []kv {
@@ -104,6 +113,76 @@ func hasDupeLetters(word string) bool {
 	return false
 }
 
+func findStarters(startingCombos map[string]int, shrinkingWords map[string]int, depth int) map[string]int {
+	if depth <= 0 {
+		fmt.Println("depth 0, returning startingCombos")
+		for startingCombo := range startingCombos {
+			startingCombos[startingCombo] = scoreWord(startingCombo)
+		}
+		return startingCombos
+	}
+
+	// to hold the new longer combos as we iterate recursively
+	var newStartingCombos = make(map[string]int)
+
+	// first pass, populate with "words"
+	if len(startingCombos) == 0 {
+		fmt.Println("first pass, populating startingCombos")
+		for word := range shrinkingWords {
+			newStartingCombos[word] = 0
+		}
+	} else {
+		for startingCombo := range startingCombos {
+			for word := range shrinkingWords {
+				newStartingCombo := startingCombo + "," + word
+				if uniqueStartingCombo(newStartingCombo, newStartingCombos) {
+					newStartingCombos[newStartingCombo] = 0
+				}
+			}
+		}
+	}
+
+	return findStarters(newStartingCombos, shrinkingWords, depth-1)
+}
+
+func uniqueStartingCombo(newStartingCombo string, newStartingCombos map[string]int) bool {
+	var foundComboMatch bool
+	splitWords := strings.Split(newStartingCombo, ",")
+	for startingCombo := range newStartingCombos {
+		foundComboMatch = true // assume match until proven otherwise
+		for i := 0; i < len(splitWords); i++ {
+			if !strings.Contains(startingCombo, splitWords[i]) {
+				foundComboMatch = false
+			}
+		}
+		if foundComboMatch {
+			return false
+		}
+	}
+	return true
+}
+
+func buildStartingCombos() map[string]int {
+	// four layers deep
+	var wordTwos, wordThrees, wordFours, startingCombos map[string]int
+
+	for wordOne := range allWords {
+		wordTwos := removeWord(wordOne, allWords)
+		for wordTwo := range wordTwos {
+			wordThrees := removeWord(wordTwo, wordTwos)
+			for wordThree := range wordThrees {
+				wordFours := removeWord(wordThree, wordThrees)
+				for wordFour := range wordFours {
+					startingCombo := wordOne + "," + wordTwo + "," + wordThree + "," + wordFour
+					startingCombos[startingCombo] = allWords[wordOne] + allWords[wordTwo] + allWords[wordThree] + allWords[wordFour]
+				}
+			}
+		}
+	}
+
+	return startingCombos
+}
+
 func pruneThing(scoredThing map[string]int) map[string]int {
 	sortedScoredThing := sortScoredThings(scoredThing)
 
@@ -124,33 +203,8 @@ func pruneThing(scoredThing map[string]int) map[string]int {
 	return prunedSortedScoredThing
 }
 
-func scorePairs(words map[string]int) map[string]int {
-	var pairs = make(map[string]int)
-	wordTwos := words
-
-	for wordOne := range words {
-		// remove wordOne, avoid permutatioins like "cat,dog,bat" and "bat,cat,dog"
-		wordTwos = removeWord(wordOne, wordTwos)
-
-		for wordTwo := range wordTwos {
-			pairWord := wordOne + "," + wordTwo
-			if hasDupeLetters(pairWord) {
-				continue
-			}
-			pairScore := words[wordOne] + words[wordTwo]
-			pairs[pairWord] = pairScore
-		}
-
-		// too much memory :(
-		pairs = pruneThing(pairs)
-	}
-
-	return pairs
-}
-
 func removeWord(dirtyWord string, words map[string]int) map[string]int {
 	// strips a word out of the slice..
-
 	var cleanWords = make(map[string]int)
 
 	for word := range words {
@@ -162,223 +216,55 @@ func removeWord(dirtyWord string, words map[string]int) map[string]int {
 	return cleanWords
 }
 
-func scoreTrips(words map[string]int) map[string]int {
-	var trips = make(map[string]int)
-
-	wordTwos := words
-	wordThrees := words
-
-	c := 0
-
-	for wordOne := range words {
-		if hasDupeLetters(wordOne) {
-			continue
-		}
-
-		// remove wordOne, avoid permutatioins like "cat,dog,bat" and "bat,cat,dog"
-		wordTwos = removeWord(wordOne, wordTwos)
-		fmt.Printf("wordTwos %d\n", len(wordTwos))
-
-		for wordTwo := range wordTwos {
-			pairWord := wordOne + "," + wordTwo
-
-			if hasDupeLetters(pairWord) {
-				continue
-			}
-
-			pairScore := words[wordOne] + words[wordTwo]
-
-			// remove wordTwo, avoid permutatioins like "cat,dog,bat" and "bat,cat,dog"
-			wordThrees = removeWord(wordTwo, wordThrees)
-			// fmt.Printf("wordThrees %d\n", len(wordThrees))
-
-			for wordThree := range wordThrees {
-
-				tripsWord := pairWord + "," + wordThree
-
-				if hasDupeLetters(tripsWord) {
-					continue
-				}
-
-				tripsScore := pairScore + words[wordThree]
-				trips[tripsWord] = tripsScore
-				// fmt.Printf("Trips %s %d\n", tripsWord, tripsScore)
-			}
-
-		}
-		c++
-		fmt.Printf("Onto word %s, %d/%d\n", wordOne, c, len(words))
-
-		// prune the trips.. too much memory used :(
-		fmt.Printf("trips length: %d\n", len(trips))
-		trips = pruneThing(trips)
+func printSortedScoredThing(sortedScoredThing []kv, topX int) {
+	if topX > len(sortedScoredThing) || topX == 0 {
+		topX = len(sortedScoredThing)
 	}
 
-	return trips
-}
-
-func scoreQuads(words map[string]int) map[string]int {
-	var quads = make(map[string]int)
-
-	wordTwos := words
-	wordThrees := words
-	wordFours := words
-
-	c := 0
-
-	for wordOne := range words {
-		if hasDupeLetters(wordOne) {
-			continue
-		}
-
-		// remove wordOne, avoid permutatioins like "cat,dog,bat" and "bat,cat,dog"
-		wordTwos = removeWord(wordOne, wordTwos)
-		fmt.Printf("wordTwos %d\n", len(wordTwos))
-
-		for wordTwo := range wordTwos {
-			pairWord := wordOne + "," + wordTwo
-
-			if hasDupeLetters(pairWord) {
-				continue
-			}
-
-			pairScore := words[wordOne] + words[wordTwo]
-
-			// remove wordTwo, avoid permutatioins like "cat,dog,bat" and "bat,cat,dog"
-			wordThrees = removeWord(wordTwo, wordThrees)
-			// fmt.Printf("wordThrees %d\n", len(wordThrees))
-
-			for wordThree := range wordThrees {
-
-				tripsWord := pairWord + "," + wordThree
-
-				if hasDupeLetters(tripsWord) {
-					continue
-				}
-
-				tripsScore := pairScore + words[wordThree]
-
-				wordFours = removeWord(wordThree, wordFours)
-
-				for wordFour := range wordFours {
-
-					quadsWord := tripsWord + "," + wordFour
-
-					if hasDupeLetters(quadsWord) {
-						continue
-					}
-
-					quadsScore := tripsScore + words[wordFour]
-					quads[quadsWord] = quadsScore
-				}
-			}
-		}
-		c++
-		fmt.Printf("Onto word %s, %d/%d\n", wordOne, c, len(words))
-
-		// prune the quads.. too much memory used :(
-		fmt.Printf("trips length: %d\n", len(quads))
-		quads = pruneThing(quads)
+	for _, kv := range sortedScoredThing[:topX] {
+		fmt.Printf("%s %d\n", kv.Key, kv.Value)
 	}
-
-	return quads
 }
 
 func main() {
+	initLetters()
+	initWords("c:\\temp\\wordlewords.txt.short")
+	scoreLetters()
+
 	var topX int
-	var currentLength int
 
 	// from https://github.com/tabatkins/wordle-list
-	letters := initLetters()
-	words, err := initWords("c:\\temp\\wordlewords.txt")
-
-	if err != nil {
-		log.Fatalf("readLines: %s", err)
-	}
 
 	// what'd we read?
-	fmt.Printf("Read %d words", len(words))
+	fmt.Printf("Read %d words", len(allWords))
 
 	// score and print letters
 	fmt.Println("--- scored letters ---")
-	scoredLetters := scoreLetters(letters, words)
-	for letter, score := range scoredLetters {
-		fmt.Println(string(letter), score)
-	}
+	sortedScoredLettes := sortScoredThings(letters)
+	printSortedScoredThing(sortedScoredLettes, 0)
 	fmt.Println("------")
 
 	/////////////// score words
-	scoredWords := scoreWords(letters, words)
-	fmt.Printf("Scored %d words", len(scoredWords))
+	scoreWords()
+	fmt.Printf("Scored %d words", len(allWords))
 
 	////////////// top X scored words
 	topX = 10
 	fmt.Printf("--- top %d scored words ---\n", topX)
 	// sort the scored words
-	sortedScoredWords := sortScoredThings(scoredWords)
-
-	for _, kv := range sortedScoredWords[0:topX] {
-		fmt.Printf("%s %d\n", kv.Key, kv.Value)
-	}
+	sortedScoredWords := sortScoredThings(allWords)
+	printSortedScoredThing(sortedScoredWords, topX)
 	fmt.Println("------")
 
-	/////////////// top X scored pairs
-	topX = 1000
-	fmt.Printf("--- top %d scored pairs ---\n", topX)
-	// score the pairs
-	scoredPairs := scorePairs(scoredWords)
-	// sort the scored pairs
-	sortedScoredPairs := sortScoredThings(scoredPairs)
-
-	// need to be within slice bounds
-	currentLength = len(sortedScoredPairs)
-	if topX > currentLength {
-		topX = currentLength
-	}
-
-	for _, kv := range sortedScoredPairs[0:topX] {
-		fmt.Printf("%s %d\n", kv.Key, kv.Value)
-	}
+	////////////// starting combos
+	topX = 10
+	var startingCombos = make(map[string]int)
+	fmt.Printf("--- top %d starting combos, %d deep ---\n", topX, starterWordCount)
+	// build our word combos
+	startingCombos = findStarters(startingCombos, allWords, starterWordCount)
+	// sort the scored words
+	sortedStartingCombos := sortScoredThings(startingCombos)
+	printSortedScoredThing(sortedStartingCombos, 0)
 	fmt.Println("------")
-	/*
-		/////////////// top X scored trips
-		topX = 1000
-
-		fmt.Printf("--- top %d scored trips ---\n", topX)
-		// score the trips
-		scoredTrips := scoreTrips(scoredWords)
-		// sort the scored pairs
-		sortedScoredTrips := sortScoredThings(scoredTrips)
-
-		// need to be within slice bounds
-		currentLength = len(sortedScoredTrips)
-		if topX > currentLength {
-			topX = currentLength
-		}
-
-		for _, kv := range sortedScoredTrips[0:topX] {
-			fmt.Printf("%s %d\n", kv.Key, kv.Value)
-		}
-		fmt.Println("------")
-
-		/////////////// top X scored quads
-		topX = 1000
-
-		fmt.Printf("--- top %d scored quads ---\n", topX)
-		// score the trips
-		scoredQuads := scoreQuads(scoredWords)
-		// sort the scored pairs
-		sortedScoredQuads := sortScoredThings(scoredQuads)
-
-		// need to be within slice bounds
-		currentLength = len(sortedScoredQuads)
-		if topX > currentLength {
-			topX = currentLength
-		}
-
-		for _, kv := range sortedScoredQuads[0:topX] {
-			fmt.Printf("%s %d\n", kv.Key, kv.Value)
-		}
-		fmt.Println("------") */
 
 }
