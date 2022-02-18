@@ -1,4 +1,4 @@
-package wordle
+package main
 
 // playing a bit with recursion, then will move to concurrency
 
@@ -18,6 +18,9 @@ const wantWordsWithDupeLetters bool = true
 
 // if a letter appears more than once in a word, should that letter's score be counted once (false), or for every occurence (true)?
 const scoreDupeLetters bool = false
+
+// how many top scores to track?  ie how many starting word combos to keep
+const keepTopXScores int = 100
 
 type kv struct {
 	Key   string
@@ -164,23 +167,62 @@ func uniqueStartingCombo(newStartingCombo string, newStartingCombos map[string]i
 
 func buildStartingCombos() map[string]int {
 	// four layers deep
-	var wordTwos, wordThrees, wordFours, startingCombos map[string]int
+	var startingCombos = make(map[string]int)
+	var wordTwos, wordThrees, wordFours map[string]int
+	//var wordOnes, wordTwos, wordThrees, wordFours map[string]int
 
+	var topX []int
+	var keep bool
+
+	wordTwos = allWords
 	for wordOne := range allWords {
-		wordTwos := removeWord(wordOne, allWords)
+		wordTwos = removeWord(wordOne, wordTwos)
+
+		wordThrees = wordTwos
 		for wordTwo := range wordTwos {
-			wordThrees := removeWord(wordTwo, wordTwos)
+			wordThrees = removeWord(wordTwo, wordThrees)
+
+			wordFours = wordThrees
 			for wordThree := range wordThrees {
-				wordFours := removeWord(wordThree, wordThrees)
+				wordFours = removeWord(wordThree, wordFours)
+
 				for wordFour := range wordFours {
+
+					// TODO - make this loop run concurrently, performance is crap (can't pre-score the words with new scoring idea (scoring the combo, rather than summing the word scores))
+
 					startingCombo := wordOne + "," + wordTwo + "," + wordThree + "," + wordFour
-					startingCombos[startingCombo] = allWords[wordOne] + allWords[wordTwo] + allWords[wordThree] + allWords[wordFour]
+					// startingComboScore := allWords[wordOne] + allWords[wordTwo] + allWords[wordThree] + allWords[wordFour]
+					startingComboScore := scoreWord(startingCombo)
+
+					keep, topX = worthKeeping(startingComboScore, topX)
+					if keep {
+						startingCombos[startingCombo] = startingComboScore
+					}
 				}
 			}
 		}
 	}
-
 	return startingCombos
+}
+
+func worthKeeping(score int, topScores []int) (bool, []int) {
+	// we want to populate at least keepTopXScores worth of scores..
+	if len(topScores) <= keepTopXScores {
+		topScores = append(topScores, score)
+		return true, topScores
+	}
+
+	// sort topX scores
+	sort.Ints(topScores)
+
+	// walk sorted slice biggest to smallest value - is our score bigger?
+	for i := len(topScores) - 1; i == 0; i-- {
+		if score > topScores[i] {
+			topScores[i] = score
+			return true, topScores
+		}
+	}
+	return false, topScores
 }
 
 func pruneThing(scoredThing map[string]int) map[string]int {
@@ -258,10 +300,9 @@ func main() {
 
 	////////////// starting combos
 	topX = 10
-	var startingCombos = make(map[string]int)
-	fmt.Printf("--- top %d starting combos, %d deep ---\n", topX, starterWordCount)
+	fmt.Printf("--- top %d starting combos ---\n", topX)
 	// build our word combos
-	startingCombos = findStarters(startingCombos, allWords, starterWordCount)
+	startingCombos := buildStartingCombos()
 	// sort the scored words
 	sortedStartingCombos := sortScoredThings(startingCombos)
 	printSortedScoredThing(sortedStartingCombos, 0)
